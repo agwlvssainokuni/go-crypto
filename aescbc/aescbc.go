@@ -108,34 +108,34 @@ func NewAESCBCPKCS7EncDec(key, iv []byte) (Encrypter, Decrypter, error) {
 	}
 }
 
-func NewCBCPKCS7IVEncrypter(b cipher.Block) Encrypter {
+func NewCBCPKCS7ivEncrypter(b cipher.Block) Encrypter {
 	return &cbcpkcs7iv{b}
 }
 
-func NewCBCPKCS7IVDecrypter(b cipher.Block) Decrypter {
+func NewCBCPKCS7ivDecrypter(b cipher.Block) Decrypter {
 	return &cbcpkcs7iv{b}
 }
 
-func NewAESCBCPKCS7IVEncrypter(key []byte) (Encrypter, error) {
+func NewAESCBCPKCS7ivEncrypter(key []byte) (Encrypter, error) {
 	if b, err := aes.NewCipher(key); err != nil {
 		return nil, err
 	} else {
-		return NewCBCPKCS7IVEncrypter(b), nil
+		return NewCBCPKCS7ivEncrypter(b), nil
 	}
 }
 
-func NewAESCBCPKCS7IVDecrypter(key []byte) (Decrypter, error) {
+func NewAESCBCPKCS7ivDecrypter(key []byte) (Decrypter, error) {
 	if b, err := aes.NewCipher(key); err != nil {
 		return nil, err
 	} else {
-		return NewCBCPKCS7IVDecrypter(b), nil
+		return NewCBCPKCS7ivDecrypter(b), nil
 	}
 }
 
-func NewAESCBCPKCS7IVEncDec(key []byte) (Encrypter, Decrypter, error) {
+func NewAESCBCPKCS7ivEncDec(key []byte) (Encrypter, Decrypter, error) {
 	if b, err := aes.NewCipher(key); err != nil {
 		return nil, nil, err
 	} else {
-		return NewCBCPKCS7IVEncrypter(b), NewCBCPKCS7IVDecrypter(b), nil
+		return NewCBCPKCS7ivEncrypter(b), NewCBCPKCS7ivDecrypter(b), nil
 	}
 }
