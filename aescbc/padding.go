@@ -21,29 +21,44 @@ import (
 )
 
 func addPaddingByPKCS7(blockSize int, src []byte) []byte {
-	dstSize := (len(src)/blockSize + 1) * blockSize
-	padSize := dstSize - len(src)
-	dst := make([]byte, dstSize)
-	copy(dst, src)
-	for i := len(src); i < len(dst); i++ {
-		dst[i] = byte(padSize)
-	}
+	dst := make([]byte, calcDstSizeForPaddingByPKCS7(blockSize, src))
+	fillPaddingByPKCS7(blockSize, dst, src)
 	return dst
 }
 
+func fillPaddingByPKCS7(blockSize int, dst, src []byte) {
+	copy(dst, src)
+	padding := byte(len(dst) - len(src))
+	for i := len(src); i < len(dst); i++ {
+		dst[i] = padding
+	}
+}
+
+func calcDstSizeForPaddingByPKCS7(blockSize int, src []byte) int {
+	return (len(src)/blockSize + 1) * blockSize
+}
+
 func removePaddingByPKCS7(blockSize int, src []byte) ([]byte, error) {
+	if dstSize, err := verifyPaddingByPKCS7(blockSize, src); err != nil {
+		return nil, err
+	} else {
+		return src[:dstSize], nil
+	}
+}
+
+func verifyPaddingByPKCS7(blockSize int, src []byte) (int, error) {
 	if len(src)%blockSize != 0 {
-		return nil, fmt.Errorf("Invalid data size %d for blockSize %d", len(src), blockSize)
+		return -1, fmt.Errorf("Invalid data size %d for blockSize %d", len(src), blockSize)
 	}
-	padSize := int(src[len(src)-1])
-	if len(src) < padSize {
-		return nil, fmt.Errorf("Invalid padding 0x%x for data size %d", padSize, len(src))
+	padding := src[len(src)-1]
+	if len(src) < int(padding) {
+		return -1, fmt.Errorf("Invalid padding 0x%x for data size %d", padding, len(src))
 	}
-	dstSize := len(src) - padSize
+	dstSize := len(src) - int(padding)
 	for i, b := range src[dstSize:] {
-		if b != byte(padSize) {
-			return nil, fmt.Errorf("Invalid padding 0x%x (at %dth)", b, i)
+		if b != padding {
+			return -1, fmt.Errorf("Invalid padding 0x%x (at %dth)", b, i)
 		}
 	}
-	return src[:dstSize], nil
+	return dstSize, nil
 }

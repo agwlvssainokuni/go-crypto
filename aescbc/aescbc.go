@@ -24,10 +24,14 @@ import (
 
 type Encrypter interface {
 	Encrypt(src []byte) []byte
+	doEncrypt(dst, src []byte)
+	calcDstSizeToEnc(src []byte) int
 }
 
 type Decrypter interface {
 	Decrypt(src []byte) ([]byte, error)
+	doDecrypt(dst, src []byte) (int, error)
+	calcDstSizeToDec(src []byte) int
 }
 
 type cbcpkcs7 struct {
@@ -38,57 +42,91 @@ type cbcpkcs7iv struct {
 	b cipher.Block
 }
 
-func (x *cbcpkcs7) Encrypt(src []byte) []byte {
-	dst := addPaddingByPKCS7(x.bm.BlockSize(), src)
-	x.bm.CryptBlocks(dst, dst)
+func encryptMain(x Encrypter, src []byte) []byte {
+	dst := make([]byte, x.calcDstSizeToEnc(src))
+	x.doEncrypt(dst, src)
 	return dst
+}
+
+func decryptMain(x Decrypter, src []byte) ([]byte, error) {
+	dst := make([]byte, x.calcDstSizeToDec(src))
+	if dstSize, err := x.doDecrypt(dst, src); err != nil {
+		return nil, err
+	} else {
+		return dst[:dstSize], nil
+	}
+}
+
+func (x *cbcpkcs7) Encrypt(src []byte) []byte {
+	return encryptMain(x, src)
+}
+
+func (x *cbcpkcs7) doEncrypt(dst, src []byte) {
+	fillPaddingByPKCS7(x.bm.BlockSize(), dst, src)
+	x.bm.CryptBlocks(dst, dst)
+}
+
+func (x *cbcpkcs7) calcDstSizeToEnc(src []byte) int {
+	return calcDstSizeForPaddingByPKCS7(x.bm.BlockSize(), src)
 }
 
 func (x *cbcpkcs7) Decrypt(src []byte) ([]byte, error) {
-	dst := make([]byte, len(src))
+	return decryptMain(x, src)
+}
+
+func (x *cbcpkcs7) doDecrypt(dst, src []byte) (int, error) {
 	x.bm.CryptBlocks(dst, src)
-	return removePaddingByPKCS7(x.bm.BlockSize(), dst)
+	return verifyPaddingByPKCS7(x.bm.BlockSize(), dst)
+}
+
+func (x *cbcpkcs7) calcDstSizeToDec(src []byte) int {
+	return len(src)
 }
 
 func (x *cbcpkcs7iv) Encrypt(src []byte) []byte {
-	padded := addPaddingByPKCS7(x.b.BlockSize(), src)
-	dst := make([]byte, len(padded)+x.b.BlockSize())
+	return encryptMain(x, src)
+}
+
+func (x *cbcpkcs7iv) doEncrypt(dst, src []byte) {
 	if n, err := rand.Read(dst[:x.b.BlockSize()]); n != x.b.BlockSize() || err != nil {
 		panic("failed to generate IV")
 	}
+	fillPaddingByPKCS7(x.b.BlockSize(), dst[x.b.BlockSize():], src)
 	bm := cipher.NewCBCEncrypter(x.b, dst[:x.b.BlockSize()])
-	bm.CryptBlocks(dst[x.b.BlockSize():], padded)
-	return dst
+	bm.CryptBlocks(dst[x.b.BlockSize():], dst[x.b.BlockSize():])
+}
+
+func (x *cbcpkcs7iv) calcDstSizeToEnc(src []byte) int {
+	return calcDstSizeForPaddingByPKCS7(x.b.BlockSize(), src) + x.b.BlockSize()
 }
 
 func (x *cbcpkcs7iv) Decrypt(src []byte) ([]byte, error) {
-	padded := make([]byte, len(src)-x.b.BlockSize())
+	return decryptMain(x, src)
+}
+
+func (x *cbcpkcs7iv) doDecrypt(dst, src []byte) (int, error) {
 	bm := cipher.NewCBCDecrypter(x.b, src[:x.b.BlockSize()])
-	bm.CryptBlocks(padded, src[x.b.BlockSize():])
-	return removePaddingByPKCS7(x.b.BlockSize(), padded)
+	bm.CryptBlocks(dst, src[x.b.BlockSize():])
+	return verifyPaddingByPKCS7(x.b.BlockSize(), dst)
 }
 
-func NewPKCS7Encrypter(bm cipher.BlockMode) Encrypter {
-	return &cbcpkcs7{bm}
-}
-
-func NewPKCS7Decrypter(bm cipher.BlockMode) Decrypter {
-	return &cbcpkcs7{bm}
+func (x *cbcpkcs7iv) calcDstSizeToDec(src []byte) int {
+	return len(src) - x.b.BlockSize()
 }
 
 func NewCBCPKCS7Encrypter(b cipher.Block, iv []byte) Encrypter {
-	return NewPKCS7Encrypter(cipher.NewCBCEncrypter(b, iv))
+	return &cbcpkcs7{cipher.NewCBCEncrypter(b, iv)}
 }
 
 func NewCBCPKCS7Decrypter(b cipher.Block, iv []byte) Decrypter {
-	return NewPKCS7Decrypter(cipher.NewCBCDecrypter(b, iv))
+	return &cbcpkcs7{cipher.NewCBCDecrypter(b, iv)}
 }
 
 func NewAESCBCPKCS7Encrypter(key, iv []byte) (Encrypter, error) {
 	if b, err := aes.NewCipher(key); err != nil {
 		return nil, err
 	} else {
-		return NewCBCPKCS7Encrypter(b, iv), nil
+		return &cbcpkcs7{cipher.NewCBCEncrypter(b, iv)}, nil
 	}
 }
 
@@ -96,7 +134,7 @@ func NewAESCBCPKCS7Decrypter(key, iv []byte) (Decrypter, error) {
 	if b, err := aes.NewCipher(key); err != nil {
 		return nil, err
 	} else {
-		return NewCBCPKCS7Decrypter(b, iv), nil
+		return &cbcpkcs7{cipher.NewCBCDecrypter(b, iv)}, nil
 	}
 }
 
@@ -104,7 +142,7 @@ func NewAESCBCPKCS7EncDec(key, iv []byte) (Encrypter, Decrypter, error) {
 	if b, err := aes.NewCipher(key); err != nil {
 		return nil, nil, err
 	} else {
-		return NewCBCPKCS7Encrypter(b, iv), NewCBCPKCS7Decrypter(b, iv), nil
+		return &cbcpkcs7{cipher.NewCBCEncrypter(b, iv)}, &cbcpkcs7{cipher.NewCBCDecrypter(b, iv)}, nil
 	}
 }
 
@@ -120,7 +158,7 @@ func NewAESCBCPKCS7ivEncrypter(key []byte) (Encrypter, error) {
 	if b, err := aes.NewCipher(key); err != nil {
 		return nil, err
 	} else {
-		return NewCBCPKCS7ivEncrypter(b), nil
+		return &cbcpkcs7iv{b}, nil
 	}
 }
 
@@ -128,7 +166,7 @@ func NewAESCBCPKCS7ivDecrypter(key []byte) (Decrypter, error) {
 	if b, err := aes.NewCipher(key); err != nil {
 		return nil, err
 	} else {
-		return NewCBCPKCS7ivDecrypter(b), nil
+		return &cbcpkcs7iv{b}, nil
 	}
 }
 
@@ -136,6 +174,6 @@ func NewAESCBCPKCS7ivEncDec(key []byte) (Encrypter, Decrypter, error) {
 	if b, err := aes.NewCipher(key); err != nil {
 		return nil, nil, err
 	} else {
-		return NewCBCPKCS7ivEncrypter(b), NewCBCPKCS7ivDecrypter(b), nil
+		return &cbcpkcs7iv{b}, &cbcpkcs7iv{b}, nil
 	}
 }

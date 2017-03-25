@@ -23,19 +23,21 @@ import (
 )
 
 func TestAESCBCPKCS7_1(t *testing.T) {
-	numOfTrial := 10
-	maxSize := 1024
+	numOfTrial := 5
+	maxSize := 512
 
 	for i := 0; i < numOfTrial; i++ {
 
 		key := make([]byte, 16)
 		if n, err := rand.Read(key); n != 16 || err != nil {
 			t.Error("failed to create key")
+			return
 		}
 
 		cipher, err := aes.NewCipher(key)
 		if err != nil {
 			t.Error("failed to create cipher")
+			return
 		}
 
 		for size := 0; size <= maxSize; size++ {
@@ -43,43 +45,27 @@ func TestAESCBCPKCS7_1(t *testing.T) {
 			iv := make([]byte, 16)
 			if n, err := rand.Read(iv); n != 16 || err != nil {
 				t.Error("failed to create iv")
+				return
 			}
 
 			enc := NewCBCPKCS7Encrypter(cipher, iv)
 			dec := NewCBCPKCS7Decrypter(cipher, iv)
 
-			src := make([]byte, size)
-			if n, err := rand.Read(src); n != size || err != nil {
-				t.Error("failed to create source data")
-			}
-			c := enc.Encrypt(src)
-			dst, err := dec.Decrypt(c)
-			if err != nil {
-				t.Error("failed to decrypt")
-			}
-
-			if len(src) != len(dst) {
-				t.Error("size mismatch")
-			}
-
-			for i, b := range src {
-				if b != dst[i] {
-					t.Error("data mismatch at %d", i)
-				}
-			}
+			encdeccompare(t, size, enc, dec)
 		}
 	}
 }
 
 func TestAESCBCPKCS7_2(t *testing.T) {
-	numOfTrial := 10
-	maxSize := 1024
+	numOfTrial := 5
+	maxSize := 512
 
 	for i := 0; i < numOfTrial; i++ {
 
 		key := make([]byte, 16)
 		if n, err := rand.Read(key); n != 16 || err != nil {
 			t.Error("failed to create key")
+			return
 		}
 
 		for size := 0; size <= maxSize; size++ {
@@ -87,49 +73,35 @@ func TestAESCBCPKCS7_2(t *testing.T) {
 			iv := make([]byte, 16)
 			if n, err := rand.Read(iv); n != 16 || err != nil {
 				t.Error("failed to create iv")
+				return
 			}
 
 			enc, err := NewAESCBCPKCS7Encrypter(key, iv)
 			if err != nil {
 				t.Error("failed to create encrypter")
+				return
 			}
 			dec, err := NewAESCBCPKCS7Decrypter(key, iv)
 			if err != nil {
 				t.Error("failed to create decrypter")
+				return
 			}
 
-			src := make([]byte, size)
-			if n, err := rand.Read(src); n != size || err != nil {
-				t.Error("failed to create source data")
-			}
-			c := enc.Encrypt(src)
-			dst, err := dec.Decrypt(c)
-			if err != nil {
-				t.Error("failed to decrypt")
-			}
-
-			if len(src) != len(dst) {
-				t.Error("size mismatch")
-			}
-
-			for i, b := range src {
-				if b != dst[i] {
-					t.Error("data mismatch at %d", i)
-				}
-			}
+			encdeccompare(t, size, enc, dec)
 		}
 	}
 }
 
 func TestAESCBCPKCS7_3(t *testing.T) {
-	numOfTrial := 10
-	maxSize := 1024
+	numOfTrial := 5
+	maxSize := 512
 
 	for i := 0; i < numOfTrial; i++ {
 
 		key := make([]byte, 16)
 		if n, err := rand.Read(key); n != 16 || err != nil {
 			t.Error("failed to create key")
+			return
 		}
 
 		for size := 0; size <= maxSize; size++ {
@@ -137,90 +109,85 @@ func TestAESCBCPKCS7_3(t *testing.T) {
 			iv := make([]byte, 16)
 			if n, err := rand.Read(iv); n != 16 || err != nil {
 				t.Error("failed to create iv")
+				return
 			}
 
 			enc, dec, err := NewAESCBCPKCS7EncDec(key, iv)
 			if err != nil {
 				t.Error("failed to create encrypter")
+				return
 			}
 
-			src := make([]byte, size)
-			if n, err := rand.Read(src); n != size || err != nil {
-				t.Error("failed to create source data")
-			}
-			c := enc.Encrypt(src)
-			dst, err := dec.Decrypt(c)
-			if err != nil {
-				t.Error("failed to decrypt")
-			}
-
-			if len(src) != len(dst) {
-				t.Error("size mismatch")
-			}
-
-			for i, b := range src {
-				if b != dst[i] {
-					t.Error("data mismatch at %d", i)
-				}
-			}
+			encdeccompare(t, size, enc, dec)
 		}
 	}
 }
 
 func TestAESCBCPKCS7_ErrorCase(t *testing.T) {
-	numOfTrial := 10
+	numOfTrial := 5
 
 	for i := 0; i < numOfTrial; i++ {
 
 		key15 := make([]byte, 15)
 		if n, err := rand.Read(key15); n != 15 || err != nil {
 			t.Error("failed to create key15")
+			return
 		}
 		key17 := make([]byte, 17)
 		if n, err := rand.Read(key17); n != 17 || err != nil {
 			t.Error("failed to create key17")
+			return
 		}
 		iv := make([]byte, 16)
 		if n, err := rand.Read(iv); n != 16 || err != nil {
 			t.Error("failed to create iv")
+			return
 		}
 
 		if _, err := NewAESCBCPKCS7Encrypter(key15, iv); err == nil {
 			t.Error("Should fail")
+			return
 		}
 		if _, err := NewAESCBCPKCS7Decrypter(key15, iv); err == nil {
 			t.Error("Should fail")
+			return
 		}
 		if _, _, err := NewAESCBCPKCS7EncDec(key15, iv); err == nil {
 			t.Error("Should fail")
+			return
 		}
 
 		if _, err := NewAESCBCPKCS7Encrypter(key17, iv); err == nil {
 			t.Error("Should fail")
+			return
 		}
 		if _, err := NewAESCBCPKCS7Decrypter(key17, iv); err == nil {
 			t.Error("Should fail")
+			return
 		}
 		if _, _, err := NewAESCBCPKCS7EncDec(key17, iv); err == nil {
 			t.Error("Should fail")
+			return
 		}
 	}
 }
 
 func TestAESCBCPKCS7iv_1(t *testing.T) {
-	numOfTrial := 10
-	maxSize := 1024
+	numOfTrial := 5
+	maxSize := 512
 
 	for i := 0; i < numOfTrial; i++ {
 
 		key := make([]byte, 16)
 		if n, err := rand.Read(key); n != 16 || err != nil {
 			t.Error("failed to create key")
+			return
 		}
 
 		cipher, err := aes.NewCipher(key)
 		if err != nil {
 			t.Error("failed to create cipher")
+			return
 		}
 
 		for size := 0; size <= maxSize; size++ {
@@ -228,151 +195,138 @@ func TestAESCBCPKCS7iv_1(t *testing.T) {
 			enc := NewCBCPKCS7ivEncrypter(cipher)
 			dec := NewCBCPKCS7ivDecrypter(cipher)
 
-			src := make([]byte, size)
-			if n, err := rand.Read(src); n != size || err != nil {
-				t.Error("failed to create source data")
-			}
-			c := enc.Encrypt(src)
-			dst, err := dec.Decrypt(c)
-			if err != nil {
-				t.Error("failed to decrypt")
-			}
-
-			if len(src) != len(dst) {
-				t.Error("size mismatch")
-			}
-
-			for i, b := range src {
-				if b != dst[i] {
-					t.Error("data mismatch at %d", i)
-				}
-			}
+			encdeccompare(t, size, enc, dec)
 		}
 	}
 }
 
 func TestAESCBCPKCS7iv_2(t *testing.T) {
-	numOfTrial := 10
-	maxSize := 1024
+	numOfTrial := 5
+	maxSize := 512
 
 	for i := 0; i < numOfTrial; i++ {
 
 		key := make([]byte, 16)
 		if n, err := rand.Read(key); n != 16 || err != nil {
 			t.Error("failed to create key")
+			return
 		}
 
 		enc, err := NewAESCBCPKCS7ivEncrypter(key)
 		if err != nil {
 			t.Error("failed to create encrypter")
+			return
 		}
 		dec, err := NewAESCBCPKCS7ivDecrypter(key)
 		if err != nil {
 			t.Error("failed to create decrypter")
+			return
 		}
 
 		for size := 0; size <= maxSize; size++ {
-
-			src := make([]byte, size)
-			if n, err := rand.Read(src); n != size || err != nil {
-				t.Error("failed to create source data")
-			}
-			c := enc.Encrypt(src)
-			dst, err := dec.Decrypt(c)
-			if err != nil {
-				t.Error("failed to decrypt")
-			}
-
-			if len(src) != len(dst) {
-				t.Error("size mismatch")
-			}
-
-			for i, b := range src {
-				if b != dst[i] {
-					t.Error("data mismatch at %d", i)
-				}
-			}
+			encdeccompare(t, size, enc, dec)
 		}
 	}
 }
 
 func TestAESCBCPKCS7iv_3(t *testing.T) {
-	numOfTrial := 10
-	maxSize := 1024
+	numOfTrial := 5
+	maxSize := 512
 
 	for i := 0; i < numOfTrial; i++ {
 
 		key := make([]byte, 16)
 		if n, err := rand.Read(key); n != 16 || err != nil {
 			t.Error("failed to create key")
+			return
 		}
 
 		enc, dec, err := NewAESCBCPKCS7ivEncDec(key)
 		if err != nil {
 			t.Error("failed to create encrypter")
+			return
 		}
 
 		for size := 0; size <= maxSize; size++ {
-
-			src := make([]byte, size)
-			if n, err := rand.Read(src); n != size || err != nil {
-				t.Error("failed to create source data")
-			}
-			c := enc.Encrypt(src)
-			dst, err := dec.Decrypt(c)
-			if err != nil {
-				t.Error("failed to decrypt")
-			}
-
-			if len(src) != len(dst) {
-				t.Error("size mismatch")
-			}
-
-			for i, b := range src {
-				if b != dst[i] {
-					t.Error("data mismatch at %d", i)
-				}
-			}
+			encdeccompare(t, size, enc, dec)
 		}
 	}
 }
 
 func TestAESCBCPKCS7iv_ErrorCase(t *testing.T) {
-	numOfTrial := 10
+	numOfTrial := 5
 
 	for i := 0; i < numOfTrial; i++ {
 
 		key15 := make([]byte, 15)
 		if n, err := rand.Read(key15); n != 15 || err != nil {
 			t.Error("failed to create key15")
+			return
 		}
 		key17 := make([]byte, 17)
 		if n, err := rand.Read(key17); n != 17 || err != nil {
 			t.Error("failed to create key17")
+			return
 		}
 		iv := make([]byte, 16)
 		if n, err := rand.Read(iv); n != 16 || err != nil {
 			t.Error("failed to create iv")
+			return
 		}
 
 		if _, err := NewAESCBCPKCS7ivEncrypter(key15); err == nil {
 			t.Error("Should fail")
+			return
 		}
 		if _, err := NewAESCBCPKCS7ivDecrypter(key15); err == nil {
 			t.Error("Should fail")
+			return
 		}
 		if _, _, err := NewAESCBCPKCS7ivEncDec(key15); err == nil {
 			t.Error("Should fail")
+			return
 		}
 
 		if _, err := NewAESCBCPKCS7ivEncrypter(key17); err == nil {
 			t.Error("Should fail")
+			return
 		}
 		if _, err := NewAESCBCPKCS7ivDecrypter(key17); err == nil {
 			t.Error("Should fail")
+			return
 		}
 		if _, _, err := NewAESCBCPKCS7ivEncDec(key17); err == nil {
 			t.Error("Should fail")
+			return
 		}
 	}
+}
+
+func encdeccompare(t *testing.T, size int, enc Encrypter, dec Decrypter) bool {
+
+	src := make([]byte, size)
+	if n, err := rand.Read(src); n != size || err != nil {
+		t.Error("failed to create source data")
+		return false
+	}
+	c := enc.Encrypt(src)
+	dst, err := dec.Decrypt(c)
+	if err != nil {
+		t.Error("failed to decrypt")
+		return false
+	}
+
+	if len(src) != len(dst) {
+		t.Error("size mismatch")
+		return false
+	}
+
+	for i, b := range src {
+		if b != dst[i] {
+			t.Error("data mismatch at %d", i)
+			return false
+		}
+	}
+
+	return true
 }

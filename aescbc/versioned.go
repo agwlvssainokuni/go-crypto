@@ -24,6 +24,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"encoding/pem"
+	"io"
 	"io/ioutil"
 	"path/filepath"
 	"strconv"
@@ -38,137 +39,123 @@ var (
 	AeskeyFilename  = "key.bin"
 )
 
-type versionedEncrypter struct {
-	encrypterMap map[uint32]Encrypter
+type versioned struct {
+	encdec map[uint32]*cbcpkcs7iv
 }
 
-type versionedDecrypter struct {
-	decrypterMap map[uint32]Decrypter
+func (x *versioned) Encrypt(src []byte) []byte {
+	return encryptMain(x, src)
 }
 
-func (km *versionedEncrypter) Encrypt(src []byte) []byte {
-	b := km.encrypterMap[KeyVersion].Encrypt(src)
-	dst := make([]byte, len(b)+4)
+func (x *versioned) doEncrypt(dst, src []byte) {
 	binary.BigEndian.PutUint32(dst[:4], KeyVersion)
-	copy(dst[4:], b)
-	return dst
+	x.encdec[KeyVersion].doEncrypt(dst[4:], src)
 }
 
-func (km *versionedDecrypter) Decrypt(src []byte) ([]byte, error) {
-	return km.decrypterMap[binary.BigEndian.Uint32(src[:4])].Decrypt(src[4:])
+func (x *versioned) calcDstSizeToEnc(src []byte) int {
+	return x.encdec[KeyVersion].calcDstSizeToEnc(src) + 4
 }
 
-func NewAESCBCPKCS7ivVerEncrypter(topdir string, passwdFile string) (Encrypter, error) {
-	if pwdmap, err := loadPasswdMap(passwdFile); err != nil {
-		return nil, err
-	} else if keymap, err := loadKeyMap(topdir, pwdmap); err != nil {
+func (x *versioned) Decrypt(src []byte) ([]byte, error) {
+	return decryptMain(x, src)
+}
+
+func (x *versioned) doDecrypt(dst, src []byte) (int, error) {
+	version := binary.BigEndian.Uint32(src[:4])
+	return x.encdec[version].doDecrypt(dst, src[4:])
+}
+
+func (x *versioned) calcDstSizeToDec(src []byte) int {
+	version := binary.BigEndian.Uint32(src[:4])
+	return x.encdec[version].calcDstSizeToDec(src[4:])
+}
+
+func NewAESCBCPKCS7ivVerEncrypter(topdir, pwdfile string) (Encrypter, error) {
+	if encdec, err := loadCryptoMap(topdir, pwdfile); err != nil {
 		return nil, err
 	} else {
-		encMap := make(map[uint32]Encrypter)
+		return &versioned{encdec}, nil
+	}
+}
+
+func NewAESCBCPKCS7ivVerDecrypter(topdir, pwdfile string) (Decrypter, error) {
+	if encdec, err := loadCryptoMap(topdir, pwdfile); err != nil {
+		return nil, err
+	} else {
+		return &versioned{encdec}, nil
+	}
+}
+
+func NewAESCBCPKCS7ivVerEncDec(topdir, pwdfile string) (Encrypter, Decrypter, error) {
+	if encdec, err := loadCryptoMap(topdir, pwdfile); err != nil {
+		return nil, nil, err
+	} else {
+		return &versioned{encdec}, &versioned{encdec}, nil
+	}
+}
+
+func loadCryptoMap(topdir, pwdfile string) (map[uint32]*cbcpkcs7iv, error) {
+	if keymap, err := loadAesKeyMap(topdir, pwdfile); err != nil {
+		return nil, err
+	} else {
+		encdec := make(map[uint32]*cbcpkcs7iv)
 		for vr, key := range keymap {
 			if b, err := aes.NewCipher(key); err != nil {
 				return nil, err
 			} else {
-				encMap[vr] = NewCBCPKCS7ivEncrypter(b)
+				encdec[vr] = &cbcpkcs7iv{b}
 			}
 		}
-		return &versionedEncrypter{encMap}, nil
+		return encdec, nil
 	}
 }
 
-func NewAESCBCPKCS7ivVerDecrypter(topdir string, passwdFile string) (Decrypter, error) {
-	if pwdmap, err := loadPasswdMap(passwdFile); err != nil {
-		return nil, err
-	} else if keymap, err := loadKeyMap(topdir, pwdmap); err != nil {
+func loadAesKeyMap(topdir, pwdfile string) (map[uint32][]byte, error) {
+	if pwdmap, err := loadPasswdMap(pwdfile); err != nil {
 		return nil, err
 	} else {
-		decMap := make(map[uint32]Decrypter)
-		for vr, key := range keymap {
-			if b, err := aes.NewCipher(key); err != nil {
+		rng := rand.Reader
+		aeskeymap := make(map[uint32][]byte)
+		for vr, pw := range pwdmap {
+			basedir := filepath.Join(topdir, strconv.FormatUint(uint64(vr), 10))
+			if prvkey, err := loadPrivateKey(filepath.Join(basedir, PrivkeyFilename), pw); err != nil {
+				return nil, err
+			} else if aeskey, err := loadAesKey(filepath.Join(basedir, AeskeyFilename), prvkey, rng); err != nil {
 				return nil, err
 			} else {
-				decMap[vr] = NewCBCPKCS7ivDecrypter(b)
+				aeskeymap[vr] = aeskey
 			}
 		}
-		return &versionedDecrypter{decMap}, nil
+		return aeskeymap, nil
 	}
 }
 
-func NewAESCBCPKCS7ivVerEncDec(topdir string, passwdFile string) (Encrypter, Decrypter, error) {
-	if pwdmap, err := loadPasswdMap(passwdFile); err != nil {
-		return nil, nil, err
-	} else if keymap, err := loadKeyMap(topdir, pwdmap); err != nil {
-		return nil, nil, err
-	} else {
-		encMap := make(map[uint32]Encrypter)
-		decMap := make(map[uint32]Decrypter)
-		for vr, key := range keymap {
-			if b, err := aes.NewCipher(key); err != nil {
-				return nil, nil, err
-			} else {
-				encMap[vr] = NewCBCPKCS7ivEncrypter(b)
-				decMap[vr] = NewCBCPKCS7ivDecrypter(b)
-			}
-		}
-		return &versionedEncrypter{encMap}, &versionedDecrypter{decMap}, nil
-	}
-}
+func loadPasswdMap(pwdfile string) (map[uint32]string, error) {
 
-func loadPasswdMap(file string) (map[uint32]string, error) {
-
-	data, err := ioutil.ReadFile(file)
-	if err != nil {
+	if data, err := ioutil.ReadFile(pwdfile); err != nil {
 		return nil, err
-	}
-
-	var passwd map[uint32]string
-	if strings.HasSuffix(file, ".json") {
-		err = json.Unmarshal(data, &passwd)
-		if err != nil {
-			return nil, err
-		}
 	} else {
-		err = yaml.Unmarshal(data, &passwd)
-		if err != nil {
-			return nil, err
-		}
-	}
 
-	return passwd, nil
+		var pwdmap map[uint32]string
+		if strings.HasSuffix(pwdfile, ".json") {
+			err = json.Unmarshal(data, &pwdmap)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			err = yaml.Unmarshal(data, &pwdmap)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		return pwdmap, nil
+	}
 }
 
-func loadKeyMap(topdir string, passwd map[uint32]string) (map[uint32][]byte, error) {
+func loadPrivateKey(prvkeyfile, passwd string) (*rsa.PrivateKey, error) {
 
-	rng := rand.Reader
-	keymap := make(map[uint32][]byte)
-	for vr, pw := range passwd {
-
-		basedir := filepath.Join(topdir, strconv.FormatUint(uint64(vr), 10))
-
-		privkey, err := loadPrivateKey(filepath.Join(basedir, PrivkeyFilename), pw)
-		if err != nil {
-			return nil, err
-		}
-
-		data, err := ioutil.ReadFile(filepath.Join(basedir, AeskeyFilename))
-		if err != nil {
-			return nil, err
-		}
-
-		key, err := rsa.DecryptPKCS1v15(rng, privkey, data)
-		if err != nil {
-			return nil, err
-		}
-
-		keymap[vr] = key
-	}
-
-	return keymap, nil
-}
-
-func loadPrivateKey(file string, passwd string) (*rsa.PrivateKey, error) {
-
-	data, err := ioutil.ReadFile(file)
+	data, err := ioutil.ReadFile(prvkeyfile)
 	if err != nil {
 		return nil, err
 	}
@@ -185,10 +172,25 @@ func loadPrivateKey(file string, passwd string) (*rsa.PrivateKey, error) {
 		der = blk.Bytes
 	}
 
-	privkey, err := x509.ParsePKCS1PrivateKey(der)
+	prvkey, err := x509.ParsePKCS1PrivateKey(der)
 	if err != nil {
 		return nil, err
 	}
 
-	return privkey, nil
+	return prvkey, nil
+}
+
+func loadAesKey(aeskeyfile string, prvkey *rsa.PrivateKey, rng io.Reader) ([]byte, error) {
+
+	data, err := ioutil.ReadFile(aeskeyfile)
+	if err != nil {
+		return nil, err
+	}
+
+	aeskey, err := rsa.DecryptPKCS1v15(rng, prvkey, data)
+	if err != nil {
+		return nil, err
+	}
+
+	return aeskey, nil
 }

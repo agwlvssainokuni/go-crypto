@@ -23,7 +23,7 @@ import (
 
 func TestPaddingByPKCS7(t *testing.T) {
 	blockSize := 16
-	maxLen := 1024
+	maxLen := 512
 	for i := 1; i < maxLen; i++ {
 
 		src := make([]byte, i)
@@ -32,23 +32,28 @@ func TestPaddingByPKCS7(t *testing.T) {
 		mid := addPaddingByPKCS7(blockSize, src)
 		if len(mid)%16 != 0 {
 			t.Errorf("Padded size is %d", len(mid))
+			return
 		}
 		for i, b := range src {
 			if b != mid[i] {
 				t.Errorf("Mid mismatch at %d, %x and %x", i, b, mid[i])
+				return
 			}
 		}
 
 		dst, err := removePaddingByPKCS7(blockSize, mid)
 		if err != nil {
 			t.Errorf("Error %s", err.Error())
+			return
 		}
 		if len(src) != len(dst) {
 			t.Errorf("Data size src %d and dst %d", len(src), len(dst))
+			return
 		}
 		for i, b := range src {
 			if b != dst[i] {
 				t.Errorf("Dst mismatch at %d, %x and %x", i, b, dst[i])
+				return
 			}
 		}
 	}
@@ -67,6 +72,7 @@ func TestPaddingByPKCS7_ErrorCase(t *testing.T) {
 		for j := 1; j < blockSize; j++ {
 			if _, err := removePaddingByPKCS7(blockSize, mid[:len(mid)-j]); err == nil {
 				t.Errorf("Should fail")
+				return
 			}
 		}
 
@@ -74,12 +80,14 @@ func TestPaddingByPKCS7_ErrorCase(t *testing.T) {
 		mid[len(mid)-1] = byte(len(mid) + 1)
 		if _, err := removePaddingByPKCS7(blockSize, mid); err == nil {
 			t.Errorf("Should fail")
+			return
 		}
 
 		mid[len(mid)-1] = padSize
 		mid[len(mid)-int(padSize)] = padSize + 1
 		if _, err := removePaddingByPKCS7(blockSize, mid); err == nil {
 			t.Errorf("Should fail")
+			return
 		}
 	}
 }
